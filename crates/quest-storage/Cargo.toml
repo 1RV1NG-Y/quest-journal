@@ -1,0 +1,17 @@
+[package]
+name = "quest-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+directories.workspace = true
+quest-core = { path = "../quest-core" }
+rusqlite.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

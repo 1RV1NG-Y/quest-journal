@@ -1,0 +1,27 @@
+{
+  "name": "@quest-journal/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "tauri": "tauri",
+    "app": "tauri dev",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "build": "vite build",
+    "build:app": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@lucide/svelte": "^1.31.0",
+    "svelte": "^5.19.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.4",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte-check": "^4.1.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}

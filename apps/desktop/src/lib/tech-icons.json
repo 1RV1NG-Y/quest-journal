@@ -1,0 +1,226 @@
+[
+  {
+    "id": "devicon:dotnetcore",
+    "label": ".NET",
+    "keywords": "dotnet dot net asp.net aspnet microsoft",
+    "category": "Tech",
+    "src": "/quest-icons/dotnetcore.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:java",
+    "label": "Java",
+    "keywords": "jvm programming",
+    "category": "Tech",
+    "src": "/quest-icons/java.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:csharp",
+    "label": "C#",
+    "keywords": "csharp c sharp dotnet",
+    "category": "Tech",
+    "src": "/quest-icons/csharp.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:python",
+    "label": "Python",
+    "keywords": "programming data science",
+    "category": "Tech",
+    "src": "/quest-icons/python.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:javascript",
+    "label": "JavaScript",
+    "keywords": "js web",
+    "category": "Tech",
+    "src": "/quest-icons/javascript.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:typescript",
+    "label": "TypeScript",
+    "keywords": "ts web",
+    "category": "Tech",
+    "src": "/quest-icons/typescript.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:react",
+    "label": "React",
+    "keywords": "frontend web",
+    "category": "Tech",
+    "src": "/quest-icons/react.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:svelte",
+    "label": "Svelte",
+    "keywords": "frontend web",
+    "category": "Tech",
+    "src": "/quest-icons/svelte.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:vuejs",
+    "label": "Vue",
+    "keywords": "frontend web",
+    "category": "Tech",
+    "src": "/quest-icons/vuejs.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:angular",
+    "label": "Angular",
+    "keywords": "frontend web",
+    "category": "Tech",
+    "src": "/quest-icons/angular.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:nodejs",
+    "label": "Node.js",
+    "keywords": "node backend javascript",
+    "category": "Tech",
+    "src": "/quest-icons/nodejs.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:spring",
+    "label": "Spring",
+    "keywords": "java backend",
+    "category": "Tech",
+    "src": "/quest-icons/spring.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:cplusplus",
+    "label": "C++",
+    "keywords": "cpp cplusplus",
+    "category": "Tech",
+    "src": "/quest-icons/cplusplus.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:go",
+    "label": "Go",
+    "keywords": "golang backend",
+    "category": "Tech",
+    "src": "/quest-icons/go.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:rust",
+    "label": "Rust",
+    "keywords": "systems programming",
+    "category": "Tech",
+    "src": "/quest-icons/rust.svg",
+    "light": true
+  },
+  {
+    "id": "devicon:kotlin",
+    "label": "Kotlin",
+    "keywords": "android jvm",
+    "category": "Tech",
+    "src": "/quest-icons/kotlin.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:swift",
+    "label": "Swift",
+    "keywords": "apple ios",
+    "category": "Tech",
+    "src": "/quest-icons/swift.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:html5",
+    "label": "HTML",
+    "keywords": "web markup",
+    "category": "Tech",
+    "src": "/quest-icons/html5.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:css3",
+    "label": "CSS",
+    "keywords": "web styling",
+    "category": "Tech",
+    "src": "/quest-icons/css3.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:postgresql",
+    "label": "PostgreSQL",
+    "keywords": "postgres database sql",
+    "category": "Tech",
+    "src": "/quest-icons/postgresql.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:mysql",
+    "label": "MySQL",
+    "keywords": "database sql",
+    "category": "Tech",
+    "src": "/quest-icons/mysql.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:mongodb",
+    "label": "MongoDB",
+    "keywords": "database nosql",
+    "category": "Tech",
+    "src": "/quest-icons/mongodb.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:docker",
+    "label": "Docker",
+    "keywords": "containers devops",
+    "category": "Tech",
+    "src": "/quest-icons/docker.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:kubernetes",
+    "label": "Kubernetes",
+    "keywords": "k8s containers devops",
+    "category": "Tech",
+    "src": "/quest-icons/kubernetes.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:git",
+    "label": "Git",
+    "keywords": "version control",
+    "category": "Tech",
+    "src": "/quest-icons/git.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:github",
+    "label": "GitHub",
+    "keywords": "git repositories",
+    "category": "Tech",
+    "src": "/quest-icons/github.svg",
+    "light": true
+  },
+  {
+    "id": "devicon:linux",
+    "label": "Linux",
+    "keywords": "operating system",
+    "category": "Tech",
+    "src": "/quest-icons/linux.svg",
+    "light": false
+  },
+  {
+    "id": "devicon:azure",
+    "label": "Azure",
+    "keywords": "microsoft cloud",
+    "category": "Tech",
+    "src": "/quest-icons/azure.svg",
+    "light": false
+  }
+]

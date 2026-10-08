@@ -1,0 +1,24 @@
+[package]
+name = "quest-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "quest_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+
+[dependencies]
+quest-adapters = { path = "../../../crates/quest-adapters" }
+quest-core = { path = "../../../crates/quest-core" }
+quest-storage = { path = "../../../crates/quest-storage" }
+serde.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"

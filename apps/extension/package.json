@@ -1,0 +1,19 @@
+{
+  "name": "@quest-journal/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "check": "wxt prepare && svelte-check --tsconfig ./tsconfig.json",
+    "build": "wxt build && node ../../scripts/fingerprint-extension.mjs"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@wxt-dev/module-svelte": "^2.0.5",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.7.0",
+    "wxt": "^0.20.0"
+  }
+}

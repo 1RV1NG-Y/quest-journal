@@ -1,0 +1,20 @@
+[package]
+name = "quest-native-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+quest-adapters = { path = "../quest-adapters" }
+quest-core = { path = "../quest-core" }
+quest-storage = { path = "../quest-storage" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "quest-native-host"
+path = "src/main.rs"
