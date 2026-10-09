@@ -11,3 +11,6 @@ dist/
 
 # Design references and mockups (kept locally, not part of the app)
 ChatGPT Image*.png
+
+# Personal working journal (kept locally)
+quest_journal_chat_summary.md
