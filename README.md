@@ -72,8 +72,6 @@ node scripts/test-native-install.mjs    # installed native host (after a release
 node scripts/test-native-install-plan.mjs # platform installation paths and registration
 ```
 
-The current product direction is in [quest_journal_spec.md](quest_journal_spec.md).
-
 ## License
 
 MIT

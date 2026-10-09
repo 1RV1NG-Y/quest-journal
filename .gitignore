@@ -14,3 +14,6 @@ ChatGPT Image*.png
 
 # Personal working journal (kept locally)
 quest_journal_chat_summary.md
+
+# Specs and design docs (kept locally, not part of the repo)
+quest_journal_spec.md
