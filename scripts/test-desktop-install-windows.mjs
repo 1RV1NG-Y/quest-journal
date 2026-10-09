@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { installWindowsDesktop } from './install-windows-desktop.mjs';
+
+if (process.platform !== 'win32') throw new Error('Run this integration test on Windows.');
+const directory = mkdtempSync(join(tmpdir(), 'quest-desktop-install-'));
+try {
+  const source = join(directory, 'build.exe');
+  copyFileSync(resolve('target/release/quest-desktop.exe'), source);
+  const executable = readFileSync(source);
+  const peOffset = executable.readUInt32LE(0x3c);
+  assert.equal(executable.toString('ascii', peOffset, peOffset + 4), 'PE\0\0');
+  assert.equal(executable.readUInt16LE(peOffset + 24 + 68), 2, 'Release desktop must use the Windows GUI subsystem');
+  const options = { localAppData: join(directory, "local data ñ ' $"), appData: join(directory, "roaming data 日本語 ' $") };
+  assert.throws(() => installWindowsDesktop(source, { ...options, localAppData: 'relative' }), /absolute paths/);
+  const result = installWindowsDesktop(source, options);
+  const journal = join(options.appData, 'Quest Journal', 'Quest Journal', 'data', 'quests.sqlite3');
+  mkdirSync(dirname(journal), { recursive: true });
+  writeFileSync(journal, 'existing journal sentinel');
+  const cli = fileURLToPath(new URL('./install-desktop.mjs', import.meta.url));
+  const lockedUpdate = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    "$ErrorActionPreference = 'Stop'; $file = [System.IO.File]::Open($env:QUEST_TEST_BINARY, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read); try { $ErrorActionPreference = 'Continue'; & $env:QUEST_TEST_NODE $env:QUEST_TEST_INSTALLER '--binary' $env:QUEST_TEST_SOURCE 2>&1 | Out-String | Write-Output; $status = $LASTEXITCODE } finally { $file.Dispose() }; $ErrorActionPreference = 'Stop'; if ($status -eq 0) { throw 'Installation unexpectedly replaced a locked executable' }"],
+  { encoding: 'utf8', windowsHide: true, env: { ...process.env, LOCALAPPDATA: options.localAppData, APPDATA: options.appData, QUEST_TEST_BINARY: result.binary, QUEST_TEST_NODE: process.execPath, QUEST_TEST_INSTALLER: cli, QUEST_TEST_SOURCE: source } });
+  assert.match(lockedUpdate, /Close the application and rerun the installer/);
+  assert.deepEqual(readFileSync(result.binary), executable, 'A blocked update must preserve the previous executable');
+  assert.ok(readdirSync(dirname(result.binary)).every((name) => !name.includes('.new-')), 'A blocked update must clean up its staged executable');
+  appendFileSync(source, '\nreinstall marker\n');
+  installWindowsDesktop(source, options);
+  assert.equal(readFileSync(journal, 'utf8'), 'existing journal sentinel');
+  assert.deepEqual(readFileSync(source), readFileSync(result.binary));
+  rmSync(source);
+  const shortcut = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); $shell = New-Object -ComObject WScript.Shell; $link = $shell.CreateShortcut($env:QUEST_TEST_SHORTCUT); [Console]::Write((@{ target = $link.TargetPath; workingDirectory = $link.WorkingDirectory; icon = $link.IconLocation; arguments = $link.Arguments } | ConvertTo-Json -Compress))"],
+  { encoding: 'utf8', windowsHide: true, env: { ...process.env, QUEST_TEST_SHORTCUT: result.shortcut } }));
+  assert.equal(shortcut.target, result.binary);
+  assert.equal(shortcut.workingDirectory, dirname(result.binary));
+  assert.equal(shortcut.icon, `${result.binary},0`);
+  assert.equal(shortcut.arguments, '');
+  console.log('Windows desktop install passed: GUI executable, permanent shortcut with Unicode paths, safe reinstall, blocked-update preservation, and existing journal data.');
+} finally {
+  rmSync(directory, { recursive: true, force: true });
+}

@@ -1,0 +1,43 @@
+name: Windows
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: node scripts/test-native-install-plan.mjs
+      - run: cargo test --workspace
+      - run: npm --workspace @quest-journal/desktop run build:app
+      - run: cargo build -p quest-native-host --release
+      - run: node scripts/test-desktop-install-windows.mjs
+      - run: node scripts/test-native-install.mjs
+      - name: Stage portable installation artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path windows-artifact/scripts, windows-artifact/docs -Force | Out-Null
+          Copy-Item target/release/quest-desktop.exe, target/release/quest-native-host.exe windows-artifact/
+          Copy-Item scripts/*.mjs windows-artifact/scripts/
+          Copy-Item docs/windows.md windows-artifact/docs/
+          Copy-Item apps/extension/.output/chrome-mv3 windows-artifact/browser-extension -Recurse
+          if (-not (Test-Path windows-artifact/browser-extension/manifest.json)) { throw 'Browser extension is missing from the artifact' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quest-journal-windows-x64
+          path: windows-artifact/
+          if-no-files-found: error

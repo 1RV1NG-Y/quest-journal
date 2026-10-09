@@ -74,6 +74,10 @@ impl AdapterType {
 pub enum BrowserKind {
     BraveFlatpak,
     HeliumAppImage,
+    Chrome,
+    Edge,
+    Brave,
+    Chromium,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

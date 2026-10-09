@@ -14,9 +14,9 @@ It's built with Tauri, Svelte, Rust, and SQLite, plus a browser extension that c
 
 ## Requirements
 
-- Linux (the installers currently target Linux)
+- Linux, or Windows 10/11 x64 (see the [Windows setup and validation guide](docs/windows.md))
 - Node.js 22+ and npm
-- Rust (stable) and the [Tauri 2 Linux prerequisites](https://v2.tauri.app/start/prerequisites/)
+- Rust (stable) and the [Tauri 2 prerequisites for your platform](https://v2.tauri.app/start/prerequisites/)
 - A Chromium-based browser for the extension (tested with Helium and Brave)
 
 ## Develop
@@ -31,7 +31,7 @@ npm run dev:extension                            # extension dev build (WXT)
 
 ## Install
 
-Desktop app — builds a release binary and installs it to `~/.local/bin/quest-journal` with an application-menu entry:
+Desktop app — builds a release binary and installs it with an application-menu entry on Linux or a Start Menu shortcut on Windows:
 
 ```sh
 npm run install:desktop
@@ -43,7 +43,7 @@ Browser integration — builds the extension and the native host, copies the hos
 npm run setup:browsers
 ```
 
-Then load the unpacked extension from `apps/extension/.output/chrome-mv3`. The native host installer detects Helium and Brave (Flatpak) profiles automatically and also supports Chrome, Chromium, and Firefox via `--browser`; run `node scripts/install-native-host.mjs --help` for options. After updating, reload the extension or restart the browser.
+Load the unpacked extension from the permanent location printed by the installer where available, or from `apps/extension/.output/chrome-mv3`. On Linux the installer detects Helium and Brave (Flatpak) profiles; on Windows it registers Chrome, Edge, Brave, and Chromium. Run `node scripts/install-native-host.mjs --help` for platform-specific options. After updating, reload the extension from the browser's extensions page.
 
 ## Data
 
@@ -69,6 +69,7 @@ node scripts/test-extension.mjs         # extension background behavior
 node scripts/test-extension-update.mjs  # extension update handling
 node scripts/test-shuffle.mjs           # shuffle picker
 node scripts/test-native-install.mjs    # installed native host (after a release build)
+node scripts/test-native-install-plan.mjs # platform installation paths and registration
 ```
 
 The current product direction is in [quest_journal_spec.md](quest_journal_spec.md).

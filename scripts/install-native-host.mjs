@@ -8,6 +8,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -15,7 +16,8 @@ import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fingerprintExtension } from './fingerprint-extension.mjs';
-import { installNativeBinary, shellQuote } from './install-native-binary.mjs';
+import { installNativeBinary, shellQuote, writeInstalledJson } from './install-native-binary.mjs';
+import { defaultDatabasePath, validateBrowser, windowsInstallPlan } from './native-install-plan.mjs';
 
 const HOST_NAME = 'com.quest_journal.native_host';
 const CHROME_EXTENSION_ID = 'jbaajfphjklfaifahgoeingbnejcehlp';
@@ -29,12 +31,15 @@ function usage() {
 Usage:
   node scripts/install-native-host.mjs [--binary PATH] [--extension PATH] [--helium]
   node scripts/install-native-host.mjs [--binary PATH] [--extension PATH] [--brave-flatpak]
-  node scripts/install-native-host.mjs [--binary PATH] --browser helium|brave-flatpak
+  node scripts/install-native-host.mjs [--binary PATH] --browser chrome|chromium|edge|brave|firefox|helium|brave-flatpak
 
 With no browser flag, installed Helium and Brave Flatpak profiles are detected first.
 The extension defaults to apps/extension/.output/chrome-mv3 when that build exists.
 The binary defaults to QUEST_JOURNAL_NATIVE_HOST or target/release/quest-native-host.
-It is copied into the journal data directory's bin folder; installed browsers never depend on the build directory.`);
+It is copied to a permanent per-user location; installed browsers never depend on the build directory.
+On Windows, Chrome, Chromium, Edge and Brave manifests are registered by default.
+The extension is copied to LOCALAPPDATA/Quest Journal/browser-extension for Load unpacked.`);
+  console.log('Windows supports Chrome, Chromium, Edge and Brave. Firefox is supported only on Linux/macOS.\nClose browser native-host connections before updating to a changed native-host build.');
 }
 
 let binaryArgument;
@@ -80,6 +85,8 @@ for (let index = 2; index < process.argv.length; index += 1) {
   if (
     argument === '--chrome' ||
     argument === '--chromium' ||
+    argument === '--edge' ||
+    argument === '--brave' ||
     argument === '--firefox' ||
     argument === '--helium' ||
     argument === '--brave-flatpak'
@@ -92,19 +99,21 @@ for (let index = 2; index < process.argv.length; index += 1) {
 
 if (requestedBrowsers.size === 0) {
   const home = homedir();
-  if (existsSync(join(home, '.config', 'net.imput.helium'))) requestedBrowsers.add('helium');
-  if (existsSync(join(home, '.var', 'app', 'com.brave.Browser'))) {
+  if (platform() === 'linux' && existsSync(join(home, '.config', 'net.imput.helium'))) requestedBrowsers.add('helium');
+  if (platform() === 'linux' && existsSync(join(home, '.var', 'app', 'com.brave.Browser'))) {
     requestedBrowsers.add('brave-flatpak');
   }
   if (requestedBrowsers.size === 0) {
     requestedBrowsers.add('chrome');
     requestedBrowsers.add('chromium');
+    if (platform() === 'win32') {
+      requestedBrowsers.add('edge');
+      requestedBrowsers.add('brave');
+    }
   }
 }
 for (const browser of requestedBrowsers) {
-  if (!['chrome', 'chromium', 'firefox', 'helium', 'brave-flatpak'].includes(browser)) {
-    throw new Error(`Unsupported browser “${browser}”.`);
-  }
+  validateBrowser(browser, platform());
 }
 
 const executableName = platform() === 'win32' ? 'quest-native-host.exe' : 'quest-native-host';
@@ -129,8 +138,7 @@ if (platform() !== 'win32' && (binaryStat.mode & 0o111) === 0) {
   throw new Error(`Native host binary is not executable: ${binaryPath}`);
 }
 const sharedDatabasePath =
-  process.env.QUEST_JOURNAL_DB ??
-  join(homedir(), '.local', 'share', 'questjournal', 'quests.sqlite3');
+  defaultDatabasePath(platform(), homedir(), process.env);
 const installedBinaryPath = join(dirname(sharedDatabasePath), 'bin', executableName);
 
 const defaultExtension = join(
@@ -218,34 +226,15 @@ function manifestPathFor(browser) {
   }
 
   if (currentPlatform === 'win32') {
-    const localAppData = process.env.LOCALAPPDATA;
-    if (!localAppData) throw new Error('LOCALAPPDATA is required on Windows.');
-    return join(
-      localAppData,
-      'Quest Journal',
-      'NativeMessagingHosts',
-      browser,
-      `${HOST_NAME}.json`,
-    );
+    return windowsInstallPlan(browser, process.env, sharedDatabasePath).manifestPath;
   }
 
   throw new Error(`Unsupported operating system: ${currentPlatform}`);
 }
 
-function registerWindowsManifest(browser, manifestPath) {
+function registerWindowsManifest(browser) {
   if (platform() !== 'win32') return;
-  const vendor =
-    browser === 'chrome'
-      ? 'Google\\Chrome'
-      : browser === 'chromium'
-        ? 'Chromium'
-        : 'Mozilla';
-  const registryKey = `HKCU\\Software\\${vendor}\\NativeMessagingHosts\\${HOST_NAME}`;
-  execFileSync(
-    'reg.exe',
-    ['ADD', registryKey, '/ve', '/t', 'REG_SZ', '/d', manifestPath, '/f'],
-    { stdio: 'inherit' },
-  );
+  execFileSync('reg.exe', windowsInstallPlan(browser, process.env, sharedDatabasePath).registryArgs, { stdio: 'inherit' });
 }
 
 function grantBraveFlatpakAccess() {
@@ -264,6 +253,12 @@ function grantBraveFlatpakAccess() {
 }
 
 function nativeHostPathFor(browser) {
+  if (platform() === 'win32') {
+    const plan = windowsInstallPlan(browser, process.env, sharedDatabasePath);
+    installNativeBinary(binaryPath, plan.executablePath);
+    writeInstalledJson(plan.configPath, plan.config);
+    return plan.executablePath;
+  }
   if (!['helium', 'brave-flatpak'].includes(browser)) return installedBinaryPath;
   const wrapperPath =
     browser === 'helium'
@@ -300,10 +295,12 @@ function addExtensionFlag(desktopEntry, extensionPath) {
 }
 
 function installBrowserExtension(browser) {
-  if (!extensionSource || !['helium', 'brave-flatpak'].includes(browser)) return;
+  if (!extensionSource || (platform() !== 'win32' && !['helium', 'brave-flatpak'].includes(browser))) return;
   const home = homedir();
   const destination =
-    browser === 'helium'
+    platform() === 'win32'
+      ? windowsInstallPlan(browser, process.env, sharedDatabasePath).extensionPath
+      : browser === 'helium'
       ? join(home, '.local', 'share', 'questjournal', 'browser-extension')
       : join(
           home,
@@ -323,10 +320,16 @@ function installBrowserExtension(browser) {
     filter: (source) => source !== join(extensionSource, 'manifest.json'),
   });
   const stagedManifest = join(destination, `manifest.new-${process.pid}.json`);
-  copyFileSync(join(extensionSource, 'manifest.json'), stagedManifest);
-  renameSync(stagedManifest, join(destination, 'manifest.json'));
+  try {
+    copyFileSync(join(extensionSource, 'manifest.json'), stagedManifest);
+    renameSync(stagedManifest, join(destination, 'manifest.json'));
+  } finally {
+    rmSync(stagedManifest, { force: true });
+  }
 
-  if (browser === 'helium') {
+  if (platform() === 'win32') {
+    console.log(`Load unpacked in ${browser}'s extensions developer page: ${destination}`);
+  } else if (browser === 'helium') {
     const launcher = join(home, '.local', 'share', 'applications', 'helium.desktop');
     if (!existsSync(launcher)) throw new Error(`Helium launcher does not exist: ${launcher}`);
     const contents = addExtensionFlag(readFileSync(launcher, 'utf8'), destination);
@@ -350,8 +353,10 @@ function installBrowserExtension(browser) {
   console.log(`Installed ${browser} extension build: ${destination}`);
 }
 
-installNativeBinary(binaryPath, installedBinaryPath);
-console.log(`Installed native host executable: ${installedBinaryPath}`);
+if (platform() !== 'win32') {
+  installNativeBinary(binaryPath, installedBinaryPath);
+  console.log(`Installed native host executable: ${installedBinaryPath}`);
+}
 
 for (const browser of requestedBrowsers) {
   const manifest = {
@@ -365,8 +370,8 @@ for (const browser of requestedBrowsers) {
   };
   const manifestPath = manifestPathFor(browser);
   mkdirSync(dirname(manifestPath), { recursive: true });
-  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-  registerWindowsManifest(browser, manifestPath);
+  writeInstalledJson(manifestPath, manifest);
+  registerWindowsManifest(browser);
   if (browser === 'brave-flatpak') grantBraveFlatpakAccess();
   installBrowserExtension(browser);
   console.log(`Installed ${browser} native-host manifest: ${manifestPath}`);

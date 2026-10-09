@@ -24,7 +24,10 @@ pub enum NativeRequest {
         #[serde(default)]
         parent_id: Option<String>,
     },
-    AddTabs { quest_id: String, tabs: Vec<BrowserTab> },
+    AddTabs {
+        quest_id: String,
+        tabs: Vec<BrowserTab>,
+    },
     PauseQuest {
         quest_id: String,
         checkpoint: String,
@@ -107,17 +110,37 @@ pub fn write_frame(writer: &mut impl Write, message: &[u8]) -> Result<()> {
 }
 
 pub fn handle_message(storage: &Storage, message: &[u8]) -> NativeResponse {
+    handle_message_with_browser(
+        storage,
+        message,
+        detect_browser_kind(
+            std::env::var("FLATPAK_ID").ok().as_deref(),
+            std::env::var("APPIMAGE").ok().as_deref(),
+        ),
+    )
+}
+
+/// Browser identity comes from the installed host, never from extension tab metadata.
+pub fn handle_message_with_browser(
+    storage: &Storage,
+    message: &[u8],
+    browser_kind: Option<BrowserKind>,
+) -> NativeResponse {
     let request = match serde_json::from_slice::<NativeRequest>(message) {
         Ok(request) => request,
         Err(error) => return NativeResponse::error(format!("invalid request: {error}")),
     };
-    match handle_request(storage, request) {
+    match handle_request(storage, request, browser_kind) {
         Ok(data) => NativeResponse::success(data),
         Err(error) => NativeResponse::error(error),
     }
 }
 
-fn handle_request(storage: &Storage, request: NativeRequest) -> std::result::Result<Value, String> {
+fn handle_request(
+    storage: &Storage,
+    request: NativeRequest,
+    browser_kind: Option<BrowserKind>,
+) -> std::result::Result<Value, String> {
     match request {
         NativeRequest::ListQuests => {
             let quests = storage.list_quests().map_err(|error| error.to_string())?;
@@ -143,15 +166,21 @@ fn handle_request(storage: &Storage, request: NativeRequest) -> std::result::Res
             serde_json::to_value(quest).map_err(|error| error.to_string())
         }
         NativeRequest::AddTabs { quest_id, mut tabs } => {
-            if tabs.is_empty() { return Err("Select at least one tab".into()); }
+            if tabs.is_empty() {
+                return Err("Select at least one tab".into());
+            }
             let mut ids = HashSet::new();
-            let browser_kind = detect_browser_kind(std::env::var("FLATPAK_ID").ok().as_deref(), std::env::var("APPIMAGE").ok().as_deref());
             for tab in &mut tabs {
-                validate_browser_url(&tab.url).map_err(|error| format!("unsafe tab URL: {error}"))?;
-                if !ids.insert(tab.id) { return Err("duplicate tab id".into()); }
+                validate_browser_url(&tab.url)
+                    .map_err(|error| format!("unsafe tab URL: {error}"))?;
+                if !ids.insert(tab.id) {
+                    return Err("duplicate tab id".into());
+                }
                 tab.browser_kind = browser_kind;
             }
-            storage.add_tabs(&quest_id, &tabs).map_err(|error| error.to_string())?;
+            storage
+                .add_tabs(&quest_id, &tabs)
+                .map_err(|error| error.to_string())?;
             Ok(json!({"added_count": tabs.len()}))
         }
         NativeRequest::PauseQuest {
@@ -164,9 +193,6 @@ fn handle_request(storage: &Storage, request: NativeRequest) -> std::result::Res
                 return Err("quest_id cannot be empty".into());
             }
             let mut tab_ids = HashSet::with_capacity(tabs.len());
-            let flatpak_id = std::env::var("FLATPAK_ID").ok();
-            let appimage = std::env::var("APPIMAGE").ok();
-            let browser_kind = detect_browser_kind(flatpak_id.as_deref(), appimage.as_deref());
             for tab in &mut tabs {
                 validate_browser_url(&tab.url)
                     .map_err(|error| format!("unsafe tab URL: {error}"))?;
@@ -196,11 +222,123 @@ fn detect_browser_kind(flatpak_id: Option<&str>, appimage: Option<&str>) -> Opti
         .map(|_| BrowserKind::HeliumAppImage)
 }
 
+/// Read the installer's adjacent shared-database configuration. Missing config
+/// keeps the existing default database workflow; malformed config fails closed.
+pub fn configured_database(
+    executable: &std::path::Path,
+) -> std::result::Result<Option<std::path::PathBuf>, Box<dyn std::error::Error>> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct HostConfig {
+        database: std::path::PathBuf,
+    }
+    let path = executable
+        .parent()
+        .ok_or("host has no parent directory")?
+        .join("quest-native-host.json");
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let config: HostConfig = serde_json::from_slice(&bytes)?;
+    if !config.database.is_absolute() {
+        return Err("native host database must be absolute".into());
+    }
+    Ok(Some(config.database))
+}
+
+/// Windows installers make one permanent executable copy per browser. Chromium passes
+/// the extension origin as argv[1], so browser identity cannot use positional arguments.
+pub fn browser_from_host_name(name: &str) -> Option<BrowserKind> {
+    match name.to_ascii_lowercase().as_str() {
+        "quest-native-host-chrome.exe" => Some(BrowserKind::Chrome),
+        "quest-native-host-edge.exe" => Some(BrowserKind::Edge),
+        "quest-native-host-brave.exe" => Some(BrowserKind::Brave),
+        "quest-native-host-chromium.exe" => Some(BrowserKind::Chromium),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use quest_core::{CreateQuestInput, QuestDesignation, QuestState};
     use std::io::Cursor;
+
+    #[test]
+    fn installed_host_database_configuration_is_absolute_and_strict() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("quest-native-host-chrome.exe");
+        assert!(configured_database(&executable).unwrap().is_none());
+        let config = directory.path().join("quest-native-host.json");
+        let database = directory.path().join("shared.sqlite");
+        std::fs::write(&config, json!({"database":database}).to_string()).unwrap();
+        assert_eq!(configured_database(&executable).unwrap(), Some(database));
+        for invalid in [
+            json!({"database":"relative.sqlite"}),
+            json!({"database":"x","browser":"cmd.exe"}),
+        ] {
+            std::fs::write(&config, invalid.to_string()).unwrap();
+            assert!(configured_database(&executable).is_err());
+        }
+    }
+
+    #[test]
+    fn installed_host_identity_is_allowlisted() {
+        for (name, kind) in [
+            ("chrome", BrowserKind::Chrome),
+            ("edge", BrowserKind::Edge),
+            ("brave", BrowserKind::Brave),
+            ("chromium", BrowserKind::Chromium),
+        ] {
+            assert_eq!(
+                browser_from_host_name(&format!("quest-native-host-{name}.exe")),
+                Some(kind)
+            );
+        }
+        assert_eq!(browser_from_host_name("evil.exe"), None);
+        assert_eq!(browser_from_host_name("quest-native-host.exe"), None);
+    }
+
+    #[test]
+    fn capture_overrides_extension_browser_identity() {
+        let storage = Storage::open(":memory:").unwrap();
+        let response = handle_message(
+            &storage,
+            br#"{"type":"create_quest","title":"Windows tabs"}"#,
+        );
+        let id = response.data.unwrap()["id"].as_str().unwrap().to_owned();
+        for kind in [
+            BrowserKind::Chrome,
+            BrowserKind::Edge,
+            BrowserKind::Brave,
+            BrowserKind::Chromium,
+        ] {
+            let request = json!({"type":"pause_quest","quest_id":id,"checkpoint":"",
+                "tabs":[{"id":1,"url":"https://example.com","title":"Example","pinned":false,
+                    "active":true,"index":0,"browser_kind":"brave_flatpak"}]});
+            let response =
+                handle_message_with_browser(&storage, request.to_string().as_bytes(), Some(kind));
+            assert!(response.ok, "{:?}", response.error);
+            let data = response.data.unwrap();
+            let save = storage
+                .get_save_point(data["save_point_id"].as_str().unwrap())
+                .unwrap();
+            assert_eq!(
+                save.resources[0].state_json["browser_kind"],
+                serde_json::to_value(kind).unwrap()
+            );
+            let request = json!({"type":"add_tabs","quest_id":id,
+                "tabs":[{"id":1,"url":"https://example.com","title":"Example","pinned":false,
+                    "active":true,"index":0,"browser_kind":"brave_flatpak"}]});
+            let response =
+                handle_message_with_browser(&storage, request.to_string().as_bytes(), Some(kind));
+            assert!(response.ok, "{:?}", response.error);
+            let quest = storage.get_quest(&id).unwrap();
+            assert_eq!(quest.materials[0].state_json["browser_kind"], json!(kind));
+        }
+    }
 
     #[test]
     fn native_frame_is_little_endian_and_round_trips() {
@@ -293,7 +431,10 @@ mod tests {
     #[test]
     fn native_saves_accept_blank_checkpoint_notes() {
         let storage = Storage::open(":memory:").unwrap();
-        let response = handle_message(&storage, br#"{"type":"create_quest","title":"No note needed"}"#);
+        let response = handle_message(
+            &storage,
+            br#"{"type":"create_quest","title":"No note needed"}"#,
+        );
         let id = response.data.unwrap()["id"].as_str().unwrap().to_owned();
         for checkpoint in ["", "   "] {
             let request = json!({
@@ -303,11 +444,13 @@ mod tests {
             });
             let response = handle_message(&storage, request.to_string().as_bytes());
             assert!(response.ok, "{:?}", response.error);
-            let save_id = response.data.unwrap()["save_point_id"].as_str().unwrap().to_owned();
+            let save_id = response.data.unwrap()["save_point_id"]
+                .as_str()
+                .unwrap()
+                .to_owned();
             let save = storage.get_save_point(&save_id).unwrap();
             assert_eq!(save.checkpoint, "");
             assert_eq!(save.resources.len(), 1);
         }
     }
-
 }

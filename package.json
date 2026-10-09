@@ -12,7 +12,7 @@
     "dev:extension": "npm --workspace @quest-journal/extension run dev",
     "check": "npm run check --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "setup:browsers": "npm --workspace @quest-journal/extension run build && cargo build -p quest-native-host --release && node scripts/install-native-host.mjs --binary target/release/quest-native-host",
+    "setup:browsers": "npm --workspace @quest-journal/extension run build && cargo build -p quest-native-host --release && node scripts/install-native-host.mjs",
     "install:desktop": "npm --workspace @quest-journal/desktop run build && npm --workspace @quest-journal/desktop run build:app && node scripts/install-desktop.mjs"
   },
   "engines": {

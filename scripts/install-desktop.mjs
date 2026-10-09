@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { installWindowsDesktop } from './install-windows-desktop.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
@@ -14,7 +15,7 @@ import { homedir, platform } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-if (platform() !== 'linux') throw new Error('The desktop installer currently supports Linux only.');
+if (!['linux', 'win32'].includes(platform())) throw new Error('The desktop installer supports Linux and Windows.');
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, '..');
@@ -43,7 +44,7 @@ for (let index = 2; index < process.argv.length; index += 1) {
 }
 
 const configuredBinary =
-  binaryArgument ?? join(repositoryRoot, 'target', 'release', 'quest-desktop');
+  binaryArgument ?? join(repositoryRoot, 'target', 'release', platform() === 'win32' ? 'quest-desktop.exe' : 'quest-desktop');
 const sourceBinary = isAbsolute(configuredBinary)
   ? configuredBinary
   : resolve(process.cwd(), configuredBinary);
@@ -53,6 +54,13 @@ const sourceIcon = isAbsolute(configuredIcon)
   ? configuredIcon
   : resolve(process.cwd(), configuredIcon);
 validateFile(sourceBinary, 'desktop binary');
+if (platform() === 'win32') {
+  const result = installWindowsDesktop(sourceBinary);
+  console.log(`Installed executable: ${result.binary}`);
+  console.log(`Installed Start Menu shortcut: ${result.shortcut}`);
+  console.log('Close and reopen Quest Journal to use this build. Existing journal data is preserved.');
+  process.exit(0);
+}
 validateFile(sourceIcon, 'application icon');
 
 const home = homedir();

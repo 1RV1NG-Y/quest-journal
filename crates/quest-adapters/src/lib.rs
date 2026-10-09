@@ -92,13 +92,14 @@ pub fn restore_resource(resource: &Resource) -> RestoreOutcome {
 
 pub fn restore_resources(resources: &[&Resource]) -> Vec<RestoreOutcome> {
     let mut outcomes = Vec::with_capacity(resources.len());
-    let mut brave = Vec::new();
-    let mut helium = Vec::new();
-
+    let mut groups = std::collections::BTreeMap::<&str, Vec<_>>::new();
     for (position, resource) in resources.iter().copied().enumerate() {
-        match browser_group_key(resource) {
-            Some("brave_flatpak") => match validate_browser_url(&resource.resource_uri) {
-                Ok(url) => brave.push((position, resource, url)),
+        if let Some(kind) = browser_group_key(resource) {
+            match validate_browser_url(&resource.resource_uri) {
+                Ok(url) => groups
+                    .entry(kind)
+                    .or_default()
+                    .push((position, resource, url)),
                 Err(error) => outcomes.push((
                     position,
                     RestoreOutcome {
@@ -109,25 +110,13 @@ pub fn restore_resources(resources: &[&Resource]) -> Vec<RestoreOutcome> {
                         error: Some(error.to_string()),
                     },
                 )),
-            },
-            Some("helium_app_image") => match validate_browser_url(&resource.resource_uri) {
-                Ok(url) => helium.push((position, resource, url)),
-                Err(error) => outcomes.push((
-                    position,
-                    RestoreOutcome {
-                        resource_id: resource.id.clone(),
-                        adapter_type: resource.adapter_type,
-                        resource_uri: resource.resource_uri.clone(),
-                        ok: false,
-                        error: Some(error.to_string()),
-                    },
-                )),
-            },
-            _ => outcomes.push((position, restore_resource(resource))),
+            }
+        } else {
+            outcomes.push((position, restore_resource(resource)));
         }
     }
 
-    for (browser_kind, group) in [("brave_flatpak", brave), ("helium_app_image", helium)] {
+    for (browser_kind, group) in groups {
         if group.is_empty() {
             continue;
         }
@@ -152,20 +141,23 @@ pub fn restore_resources(resources: &[&Resource]) -> Vec<RestoreOutcome> {
     outcomes.into_iter().map(|(_, outcome)| outcome).collect()
 }
 
-#[cfg(target_os = "linux")]
 fn browser_group_key(resource: &Resource) -> Option<&str> {
     if resource.adapter_type != AdapterType::BrowserTab {
         return None;
     }
-    resource.state_json["browser_kind"].as_str()
-}
-
-#[cfg(not(target_os = "linux"))]
-fn browser_group_key(_resource: &Resource) -> Option<&str> {
+    let kind = resource.state_json["browser_kind"].as_str()?;
+    #[cfg(target_os = "linux")]
+    if matches!(kind, "brave_flatpak" | "helium_app_image") {
+        return Some(kind);
+    }
+    #[cfg(target_os = "windows")]
+    if windows_browser_relative_path(kind).is_some() {
+        return Some(kind);
+    }
+    let _ = kind;
     None
 }
 
-#[cfg(target_os = "linux")]
 fn open_browser_group(browser_kind: &str, resources: &[(usize, &Resource, Url)]) -> Result<()> {
     let mut command = browser_group_command(browser_kind)?;
     command.arg("--new-window");
@@ -176,21 +168,62 @@ fn open_browser_group(browser_kind: &str, resources: &[(usize, &Resource, Url)])
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
 fn browser_group_command(browser_kind: &str) -> Result<Command> {
+    #[cfg(target_os = "linux")]
     match browser_kind {
         "brave_flatpak" => {
             let mut command = Command::new("flatpak");
             command.args(["run", "com.brave.Browser"]);
-            Ok(command)
+            return Ok(command);
         }
         "helium_app_image" => {
-            Ok(Command::new(helium_appimage().ok_or_else(|| {
-                RestoreError::MissingBrowser("Helium".into())
-            })?))
+            return Ok(Command::new(
+                helium_appimage().ok_or_else(|| RestoreError::MissingBrowser("Helium".into()))?,
+            ))
         }
-        _ => unreachable!("unsupported browser group"),
+        _ => {}
     }
+    #[cfg(target_os = "windows")]
+    if windows_browser_relative_path(browser_kind).is_some() {
+        return windows_browser_command(browser_kind);
+    }
+    Err(RestoreError::MissingBrowser(browser_kind.into()))
+}
+
+/// Only fixed installation-relative executable names are accepted. Saved metadata
+/// cannot choose an executable or inject command-line flags.
+#[cfg(any(windows, test))]
+fn windows_browser_relative_path(kind: &str) -> Option<&'static str> {
+    match kind {
+        "chrome" => Some("Google/Chrome/Application/chrome.exe"),
+        "edge" => Some("Microsoft/Edge/Application/msedge.exe"),
+        "brave" => Some("BraveSoftware/Brave-Browser/Application/brave.exe"),
+        "chromium" => Some("Chromium/Application/chrome.exe"),
+        _ => None,
+    }
+}
+
+#[cfg(any(windows, test))]
+fn windows_browser_command_in(kind: &str, roots: &[PathBuf]) -> Result<Command> {
+    let relative = windows_browser_relative_path(kind)
+        .ok_or_else(|| RestoreError::MissingBrowser(kind.into()))?;
+    let executable = roots
+        .iter()
+        .filter(|root| root.is_absolute())
+        .map(|root| root.join(relative))
+        .find(|path| path.is_file())
+        .ok_or_else(|| RestoreError::MissingBrowser(kind.into()))?;
+    Ok(Command::new(executable))
+}
+
+#[cfg(windows)]
+fn windows_browser_command(kind: &str) -> Result<Command> {
+    let roots = ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    windows_browser_command_in(kind, &roots)
 }
 
 fn open_resource(resource: &Resource, validated: ValidatedResource) -> Result<()> {
@@ -198,24 +231,24 @@ fn open_resource(resource: &Resource, validated: ValidatedResource) -> Result<()
         ValidatedResource::BrowserUrl(url) => std::ffi::OsString::from(url.as_str()),
         ValidatedResource::File(path) => path.into_os_string(),
     };
-    platform_command(resource, target).spawn()?;
+    platform_command(resource, target)?.spawn()?;
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
-fn platform_command(resource: &Resource, target: std::ffi::OsString) -> Command {
+fn platform_command(resource: &Resource, target: std::ffi::OsString) -> Result<Command> {
     if resource.adapter_type == AdapterType::BrowserTab {
         match resource.state_json["browser_kind"].as_str() {
             Some("brave_flatpak") => {
                 let mut command = Command::new("flatpak");
                 command.args(["run", "com.brave.Browser"]).arg(target);
-                return command;
+                return Ok(command);
             }
             Some("helium_app_image") => {
                 if let Some(executable) = helium_appimage() {
                     let mut command = Command::new(executable);
                     command.arg(target);
-                    return command;
+                    return Ok(command);
                 }
             }
             _ => {}
@@ -223,7 +256,7 @@ fn platform_command(resource: &Resource, target: std::ffi::OsString) -> Command 
     }
     let mut command = Command::new("xdg-open");
     command.arg(target);
-    command
+    Ok(command)
 }
 
 #[cfg(target_os = "linux")]
@@ -244,27 +277,91 @@ fn helium_appimage() -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_command(_resource: &Resource, target: std::ffi::OsString) -> Command {
+fn platform_command(_resource: &Resource, target: std::ffi::OsString) -> Result<Command> {
     let mut command = Command::new("open");
     command.arg(target);
-    command
+    Ok(command)
 }
 
 #[cfg(target_os = "windows")]
-fn platform_command(_resource: &Resource, target: std::ffi::OsString) -> Command {
+fn platform_command(resource: &Resource, target: std::ffi::OsString) -> Result<Command> {
+    if resource.adapter_type == AdapterType::BrowserTab {
+        if let Some(kind) = resource.state_json["browser_kind"].as_str() {
+            if windows_browser_relative_path(kind).is_some() {
+                let mut command = windows_browser_command(kind)?;
+                command.arg(target);
+                return Ok(command);
+            }
+        }
+    }
     let mut command = Command::new("explorer.exe");
     command.arg(target);
-    command
+    Ok(command)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-fn platform_command(_resource: &Resource, _target: std::ffi::OsString) -> Command {
-    Command::new("false")
+fn platform_command(_resource: &Resource, _target: std::ffi::OsString) -> Result<Command> {
+    Ok(Command::new("false"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_browser_commands_use_allowlisted_executables_and_literal_urls() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("Program Files with spaces");
+        for kind in ["chrome", "edge", "brave", "chromium"] {
+            let executable = root.join(windows_browser_relative_path(kind).unwrap());
+            std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+            std::fs::write(&executable, "test executable").unwrap();
+            let mut command = windows_browser_command_in(kind, &[root.clone()]).unwrap();
+            let url = validate_browser_url("https://example.com/?q=a&other=%22%20%26%20calc.exe")
+                .unwrap();
+            command.arg("--new-window").arg(url.as_str());
+            assert_eq!(command.get_program(), executable);
+            assert_eq!(
+                command.get_args().collect::<Vec<_>>(),
+                ["--new-window", url.as_str()]
+            );
+        }
+        assert!(windows_browser_command_in("cmd.exe", &[root]).is_err());
+        assert!(windows_browser_command_in("chrome", &[directory.path().join("missing")]).is_err());
+    }
+
+    #[test]
+    fn windows_browser_lookup_does_not_use_the_working_directory() {
+        // Construct an existing relative candidate without changing the process's cwd.
+        let directory = tempfile::tempdir_in(".").unwrap();
+        let root = directory
+            .path()
+            .strip_prefix(std::env::current_dir().unwrap())
+            .unwrap()
+            .to_path_buf();
+        assert!(!root.is_absolute());
+        let executable = root.join(windows_browser_relative_path("chrome").unwrap());
+        std::fs::create_dir_all(executable.parent().unwrap()).unwrap();
+        std::fs::write(&executable, "test executable").unwrap();
+        assert!(executable.is_file());
+        assert!(windows_browser_command_in("chrome", &[root, PathBuf::new()]).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_tabs_are_grouped_by_saved_browser_and_files_are_not() {
+        let mut resource = Resource {
+            id: "r".into(),
+            save_point_id: "s".into(),
+            adapter_type: AdapterType::BrowserTab,
+            resource_uri: "https://example.com".into(),
+            state_json: serde_json::json!({"browser_kind":"edge"}),
+            restore_order: 0,
+        };
+        assert_eq!(browser_group_key(&resource), Some("edge"));
+        resource.adapter_type = AdapterType::File;
+        assert_eq!(browser_group_key(&resource), None);
+    }
 
     #[test]
     fn only_plain_http_urls_are_restorable() {
@@ -302,7 +399,7 @@ mod tests {
             state_json: serde_json::json!({ "browser_kind": "brave_flatpak" }),
             restore_order: 0,
         };
-        let command = platform_command(&resource, resource.resource_uri.clone().into());
+        let command = platform_command(&resource, resource.resource_uri.clone().into()).unwrap();
         assert_eq!(command.get_program(), "flatpak");
         assert_eq!(
             command
