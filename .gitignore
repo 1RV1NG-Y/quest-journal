@@ -8,3 +8,6 @@ dist/
 *.db-shm
 *.db-wal
 .DS_Store
+
+# Design references and mockups (kept locally, not part of the app)
+ChatGPT Image*.png
