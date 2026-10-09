@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,9 @@ import { installWindowsDesktop } from './install-windows-desktop.mjs';
 import { readWindowsShortcut } from './windows-shortcut.mjs';
 
 if (process.platform !== 'win32') throw new Error('Run this integration test on Windows.');
-const directory = mkdtempSync(join(tmpdir(), 'quest-desktop-install-'));
+// CI's TEMP may use an 8.3 alias (RUNNER~1). Shell links expand that alias;
+// start with the canonical path so assertions isolate Unicode preservation.
+const directory = realpathSync.native(mkdtempSync(join(tmpdir(), 'quest-desktop-install-')));
 try {
   const source = join(directory, 'build.exe');
   // CI can first exercise the installer with an existing GUI executable, then

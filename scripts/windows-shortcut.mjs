@@ -69,6 +69,7 @@ public static class QuestShortcut {
 function runShortcut(command, environment) {
   if (process.platform !== 'win32') throw new Error('Shell shortcuts require Windows.');
   const script = `$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -TypeDefinition @'
 ${shellLinkType}
