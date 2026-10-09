@@ -5,17 +5,20 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { installWindowsDesktop } from './install-windows-desktop.mjs';
+import { readWindowsShortcut } from './windows-shortcut.mjs';
 
 if (process.platform !== 'win32') throw new Error('Run this integration test on Windows.');
 const directory = mkdtempSync(join(tmpdir(), 'quest-desktop-install-'));
 try {
   const source = join(directory, 'build.exe');
-  copyFileSync(resolve('target/release/quest-desktop.exe'), source);
+  // CI can first exercise the installer with an existing GUI executable, then
+  // repeat the same checks against the real release build. Neither is launched.
+  copyFileSync(resolve(process.argv[2] ?? 'target/release/quest-desktop.exe'), source);
   const executable = readFileSync(source);
   const peOffset = executable.readUInt32LE(0x3c);
   assert.equal(executable.toString('ascii', peOffset, peOffset + 4), 'PE\0\0');
   assert.equal(executable.readUInt16LE(peOffset + 24 + 68), 2, 'Release desktop must use the Windows GUI subsystem');
-  const options = { localAppData: join(directory, "local data ñ ' $"), appData: join(directory, "roaming data 日本語 ' $") };
+  const options = { localAppData: join(directory, "local 日本語 ñ ' $"), appData: join(directory, "roaming 中文 Ж ' $") };
   assert.throws(() => installWindowsDesktop(source, { ...options, localAppData: 'relative' }), /absolute paths/);
   const result = installWindowsDesktop(source, options);
   const journal = join(options.appData, 'Quest Journal', 'Quest Journal', 'data', 'quests.sqlite3');
@@ -33,9 +36,8 @@ try {
   assert.equal(readFileSync(journal, 'utf8'), 'existing journal sentinel');
   assert.deepEqual(readFileSync(source), readFileSync(result.binary));
   rmSync(source);
-  const shortcut = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    "$ErrorActionPreference = 'Stop'; [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); $shell = New-Object -ComObject WScript.Shell; $link = $shell.CreateShortcut($env:QUEST_TEST_SHORTCUT); [Console]::Write((@{ target = $link.TargetPath; workingDirectory = $link.WorkingDirectory; icon = $link.IconLocation; arguments = $link.Arguments } | ConvertTo-Json -Compress))"],
-  { encoding: 'utf8', windowsHide: true, env: { ...process.env, QUEST_TEST_SHORTCUT: result.shortcut } }));
+  const shortcut = readWindowsShortcut(result.shortcut);
+  assert.ok(readFileSync(result.shortcut).includes(Buffer.from(result.binary, 'utf16le')), 'The saved shortcut must contain the exact Unicode target');
   assert.equal(shortcut.target, result.binary);
   assert.equal(shortcut.workingDirectory, dirname(result.binary));
   assert.equal(shortcut.icon, `${result.binary},0`);

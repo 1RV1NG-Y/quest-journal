@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { createWindowsShortcut } from './windows-shortcut.mjs';
 import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
@@ -24,9 +24,6 @@ export function installWindowsDesktop(source, { localAppData = process.env.LOCAL
     rmSync(staged, { force: true });
   }
   if (!expectedBinary.equals(readFileSync(binary))) throw new Error('Installed executable does not match the build.');
-  // Pass paths through environment variables, never interpolate them as PowerShell code.
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-    "$ErrorActionPreference = 'Stop'; $shell = New-Object -ComObject WScript.Shell; $link = $shell.CreateShortcut($env:QUEST_DESKTOP_SHORTCUT); $link.TargetPath = $env:QUEST_DESKTOP_BINARY; $link.WorkingDirectory = [System.IO.Path]::GetDirectoryName($env:QUEST_DESKTOP_BINARY); $link.Description = 'Quest Journal'; $link.IconLocation = $env:QUEST_DESKTOP_BINARY + ',0'; $link.Save()"],
-  { stdio: 'pipe', windowsHide: true, env: { ...process.env, QUEST_DESKTOP_BINARY: binary, QUEST_DESKTOP_SHORTCUT: shortcut } });
+  createWindowsShortcut(shortcut, binary);
   return { binary, shortcut };
 }

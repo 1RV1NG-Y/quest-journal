@@ -15,6 +15,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Check Windows installer before building
+        run: node scripts/test-desktop-install-windows.mjs "$env:WINDIR\explorer.exe"
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
@@ -25,8 +27,11 @@ jobs:
       - run: cargo test --workspace
       - run: npm --workspace @quest-journal/desktop run build:app
       - run: cargo build -p quest-native-host --release
+        id: builds
       - run: node scripts/test-desktop-install-windows.mjs
+        id: desktop-install
       - run: node scripts/test-native-install.mjs
+        if: ${{ !cancelled() && steps.builds.outcome == 'success' }}
       - name: Stage portable installation artifact
         shell: pwsh
         run: |
